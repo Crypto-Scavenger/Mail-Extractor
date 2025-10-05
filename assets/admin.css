@@ -1,0 +1,123 @@
+/**
+ * Admin styles for Mail Extractor
+ *
+ * @package MailExtractor
+ * @since   1.0.0
+ */
+
+/* Message container */
+#mail-extractor-message {
+	margin: 15px 0;
+	padding: 12px;
+	border-left: 4px solid #00a32a;
+	background: #fff;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+#mail-extractor-message.error {
+	border-left-color: #d63638;
+}
+
+#mail-extractor-message.loading {
+	border-left-color: #007cba;
+}
+
+/* Provider guides */
+.mail-extractor-provider-guides {
+	margin-top: 30px;
+	padding: 20px;
+	background: #fff;
+	border: 1px solid #ccd0d4;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.mail-extractor-provider-guides h3 {
+	margin-top: 20px;
+	margin-bottom: 10px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.mail-extractor-provider-guides h3:first-child {
+	margin-top: 0;
+}
+
+.mail-extractor-provider-guides ul {
+	margin: 10px 0 10px 20px;
+	list-style: disc;
+}
+
+.mail-extractor-provider-guides li {
+	margin: 5px 0;
+	font-size: 13px;
+}
+
+/* Button spacing */
+.submit .button {
+	margin-right: 10px;
+}
+
+/* Loading spinner */
+.button.loading::after {
+	content: "";
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	margin-left: 8px;
+	border: 2px solid rgba(0, 0, 0, 0.2);
+	border-top-color: #000;
+	border-radius: 50%;
+	animation: spinner 0.6s linear infinite;
+}
+
+@keyframes spinner {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Table improvements */
+.wp-list-table {
+	margin-top: 20px;
+}
+
+.wp-list-table th {
+	font-weight: 600;
+}
+
+.wp-list-table td {
+	word-break: break-word;
+}
+
+/* Pagination */
+.tablenav {
+	margin-top: 15px;
+}
+
+.tablenav-pages {
+	float: right;
+}
+
+.tablenav-pages .page-numbers {
+	display: inline-block;
+	min-width: 32px;
+	padding: 0 6px;
+	height: 32px;
+	line-height: 32px;
+	text-align: center;
+	text-decoration: none;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	color: #2c3338;
+}
+
+.tablenav-pages .page-numbers.current {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+}
+
+.tablenav-pages .page-numbers:hover {
+	background: #f6f7f7;
+	border-color: #8c8f94;
+}
