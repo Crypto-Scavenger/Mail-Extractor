@@ -9,18 +9,18 @@
  * Requires PHP: 7.4
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ *
+ * @package MailExtractor
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Define constants
 define( 'MAIL_EXTRACTOR_VERSION', '1.0.0' );
 define( 'MAIL_EXTRACTOR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MAIL_EXTRACTOR_URL', plugin_dir_url( __FILE__ ) );
 
-// Include classes
 require_once MAIL_EXTRACTOR_DIR . 'includes/class-database.php';
 require_once MAIL_EXTRACTOR_DIR . 'includes/class-core.php';
 require_once MAIL_EXTRACTOR_DIR . 'includes/class-admin.php';
@@ -35,11 +35,10 @@ function mail_extractor_init() {
 	$core = new Mail_Extractor_Core( $database );
 	
 	if ( is_admin() ) {
-		$admin = new Mail_Extractor_Admin( $core, $database );
+		new Mail_Extractor_Admin( $core, $database );
 	}
 }
 add_action( 'plugins_loaded', 'mail_extractor_init' );
 
-// Activation/Deactivation
 register_activation_hook( __FILE__, array( 'Mail_Extractor_Database', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'Mail_Extractor_Database', 'deactivate' ) );
