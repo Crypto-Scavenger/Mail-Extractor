@@ -34,7 +34,6 @@ class Mail_Extractor_Core {
 	public function __construct( $database ) {
 		$this->database = $database;
 		
-		// Hook into WordPress cron
 		add_action( 'mail_extractor_import_emails', array( $this, 'cron_import_emails' ) );
 		add_action( 'mail_extractor_cleanup_emails', array( $this, 'cron_cleanup_emails' ) );
 	}
@@ -47,16 +46,29 @@ class Mail_Extractor_Core {
 	 * @return array Result array with success status and message
 	 */
 	public function test_connection( $config ) {
-		$server = sanitize_text_field( $config['server'] );
-		$port = (int) $config['port'];
-		$username = sanitize_text_field( $config['username'] );
-		$password = $config['password'];
-		$app_password = $config['app_password'];
-		$use_ssl = (bool) $config['use_ssl'];
+		$server = sanitize_text_field( $config['server'] ?? '' );
+		$port = (int) ( $config['port'] ?? 995 );
+		$username = sanitize_text_field( $config['username'] ?? '' );
+		$password = $config['password'] ?? '';
+		$app_password = $config['app_password'] ?? '';
+		$use_ssl = (bool) ( $config['use_ssl'] ?? true );
 
-		// Use app password if provided (for Gmail with 2FA)
+		if ( empty( $server ) || empty( $username ) ) {
+			return array(
+				'success' => false,
+				'message' => __( 'Server and username are required', 'mail-extractor' ),
+			);
+		}
+
 		if ( ! empty( $app_password ) ) {
 			$password = $app_password;
+		}
+
+		if ( empty( $password ) ) {
+			return array(
+				'success' => false,
+				'message' => __( 'Password or app password is required', 'mail-extractor' ),
+			);
 		}
 
 		$connection = $this->connect_pop3( $server, $port, $username, $password, $use_ssl );
@@ -92,10 +104,8 @@ class Mail_Extractor_Core {
 		$errstr = '';
 		$timeout = 30;
 
-		// Build connection string
 		$connection_string = $use_ssl ? "ssl://{$server}" : $server;
 
-		// Attempt connection
 		$connection = @fsockopen( $connection_string, $port, $errno, $errstr, $timeout );
 
 		if ( ! $connection ) {
@@ -110,14 +120,12 @@ class Mail_Extractor_Core {
 			);
 		}
 
-		// Read greeting
 		$response = fgets( $connection );
 		if ( false === strpos( $response, '+OK' ) ) {
 			fclose( $connection );
 			return new WP_Error( 'greeting_failed', __( 'Invalid server greeting', 'mail-extractor' ) );
 		}
 
-		// Send USER command
 		fputs( $connection, "USER {$username}\r\n" );
 		$response = fgets( $connection );
 		if ( false === strpos( $response, '+OK' ) ) {
@@ -125,7 +133,6 @@ class Mail_Extractor_Core {
 			return new WP_Error( 'user_failed', __( 'Username not accepted', 'mail-extractor' ) );
 		}
 
-		// Send PASS command
 		fputs( $connection, "PASS {$password}\r\n" );
 		$response = fgets( $connection );
 		if ( false === strpos( $response, '+OK' ) ) {
@@ -163,7 +170,6 @@ class Mail_Extractor_Core {
 		$app_password = $this->database->get_setting( 'app_password' );
 		$use_ssl = (bool) $this->database->get_setting( 'use_ssl', true );
 
-		// Validate settings
 		if ( empty( $server ) || empty( $username ) || ( empty( $password ) && empty( $app_password ) ) ) {
 			return array(
 				'success' => false,
@@ -171,12 +177,10 @@ class Mail_Extractor_Core {
 			);
 		}
 
-		// Use app password if provided
 		if ( ! empty( $app_password ) ) {
 			$password = $app_password;
 		}
 
-		// Connect to POP3
 		$connection = $this->connect_pop3( $server, $port, $username, $password, $use_ssl );
 
 		if ( is_wp_error( $connection ) ) {
@@ -187,7 +191,6 @@ class Mail_Extractor_Core {
 			);
 		}
 
-		// Get message count
 		fputs( $connection, "STAT\r\n" );
 		$response = fgets( $connection );
 		$parts = explode( ' ', $response );
@@ -201,7 +204,6 @@ class Mail_Extractor_Core {
 			);
 		}
 
-		// Import emails
 		$imported = 0;
 		for ( $i = 1; $i <= $message_count; $i++ ) {
 			$email_data = $this->retrieve_email( $connection, $i );
@@ -239,17 +241,15 @@ class Mail_Extractor_Core {
 	 * @return array|WP_Error Email data or error
 	 */
 	private function retrieve_email( $connection, $msg_number ) {
-		// Get unique ID
 		fputs( $connection, "UIDL {$msg_number}\r\n" );
 		$response = fgets( $connection );
 		$uid_parts = explode( ' ', trim( $response ) );
-		$uid = isset( $uid_parts[2] ) ? $uid_parts[2] : '';
+		$uid = $uid_parts[2] ?? '';
 
 		if ( empty( $uid ) ) {
 			return new WP_Error( 'uid_failed', __( 'Failed to get email UID', 'mail-extractor' ) );
 		}
 
-		// Retrieve email
 		fputs( $connection, "RETR {$msg_number}\r\n" );
 		$response = fgets( $connection );
 		
@@ -257,7 +257,6 @@ class Mail_Extractor_Core {
 			return new WP_Error( 'retr_failed', __( 'Failed to retrieve email', 'mail-extractor' ) );
 		}
 
-		// Read email content
 		$email_content = '';
 		while ( $line = fgets( $connection ) ) {
 			if ( ".\r\n" === $line ) {
@@ -266,7 +265,6 @@ class Mail_Extractor_Core {
 			$email_content .= $line;
 		}
 
-		// Parse email
 		$parsed = $this->parse_email( $email_content );
 		$parsed['uid'] = $uid;
 
@@ -304,17 +302,16 @@ class Mail_Extractor_Core {
 			}
 		}
 
-		// Extract data
 		$from = isset( $headers['from'] ) ? $this->extract_email_address( $headers['from'] ) : '';
 		$to = isset( $headers['to'] ) ? $this->extract_email_address( $headers['to'] ) : '';
 		$subject = isset( $headers['subject'] ) ? $this->decode_header( $headers['subject'] ) : '';
 		$date = isset( $headers['date'] ) ? $this->parse_date( $headers['date'] ) : current_time( 'mysql' );
 
 		return array(
-			'from' => $from,
-			'to' => $to,
-			'subject' => $subject,
-			'body' => $body,
+			'from' => sanitize_email( $from ),
+			'to' => sanitize_email( $to ),
+			'subject' => sanitize_text_field( $subject ),
+			'body' => wp_kses_post( $body ),
 			'date' => $date,
 			'attachments_count' => 0,
 		);
@@ -372,7 +369,6 @@ class Mail_Extractor_Core {
 		$frequency = (int) $this->database->get_setting( 'import_frequency', 60 );
 		$last_import = get_transient( 'mail_extractor_last_import' );
 
-		// Check if enough time has passed
 		if ( $last_import && ( time() - $last_import ) < ( $frequency * MINUTE_IN_SECONDS ) ) {
 			return;
 		}
@@ -405,7 +401,6 @@ class Mail_Extractor_Core {
 			$this->database->add_log( 'cleanup', $message );
 		}
 
-		// Also cleanup old logs
 		$this->database->cleanup_old_logs( 7 );
 	}
 
