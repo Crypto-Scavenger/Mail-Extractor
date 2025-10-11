@@ -26,6 +26,13 @@ class Mail_Extractor_Database {
 	private $settings = null;
 
 	/**
+	 * Table existence verified
+	 *
+	 * @var bool|null
+	 */
+	private $table_verified = null;
+
+	/**
 	 * Table names
 	 *
 	 * @var string
@@ -44,6 +51,36 @@ class Mail_Extractor_Database {
 		$this->settings_table = $wpdb->prefix . 'mail_extractor_settings';
 		$this->emails_table = $wpdb->prefix . 'mail_extractor_emails';
 		$this->logs_table = $wpdb->prefix . 'mail_extractor_logs';
+	}
+
+	/**
+	 * Ensure tables exist (CRITICAL: Call before every query)
+	 *
+	 * @since 1.0.0
+	 * @return bool
+	 */
+	private function ensure_tables_exist() {
+		if ( null !== $this->table_verified ) {
+			return $this->table_verified;
+		}
+
+		global $wpdb;
+		
+		$table_exists = $wpdb->get_var( $wpdb->prepare(
+			'SHOW TABLES LIKE %s',
+			$this->settings_table
+		) );
+		
+		if ( $this->settings_table !== $table_exists ) {
+			$this->create_tables();
+			$table_exists = $wpdb->get_var( $wpdb->prepare(
+				'SHOW TABLES LIKE %s',
+				$this->settings_table
+			) );
+		}
+		
+		$this->table_verified = ( $this->settings_table === $table_exists );
+		return $this->table_verified;
 	}
 
 	/**
@@ -79,22 +116,19 @@ class Mail_Extractor_Database {
 
 		$sql = array();
 
-		// Settings table
 		$sql[] = $wpdb->prepare(
-			"CREATE TABLE IF NOT EXISTS %i (
+			'CREATE TABLE IF NOT EXISTS %i (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				setting_key varchar(191) NOT NULL,
 				setting_value longtext,
 				PRIMARY KEY (id),
 				UNIQUE KEY setting_key (setting_key)
-			) %s",
-			$this->settings_table,
-			$charset_collate
-		);
+			)',
+			$this->settings_table
+		) . ' ' . $charset_collate;
 
-		// Emails table
 		$sql[] = $wpdb->prepare(
-			"CREATE TABLE IF NOT EXISTS %i (
+			'CREATE TABLE IF NOT EXISTS %i (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				email_uid varchar(255) NOT NULL,
 				email_from varchar(255) NOT NULL,
@@ -108,14 +142,12 @@ class Mail_Extractor_Database {
 				UNIQUE KEY email_uid (email_uid),
 				KEY email_date (email_date),
 				KEY imported_date (imported_date)
-			) %s",
-			$this->emails_table,
-			$charset_collate
-		);
+			)',
+			$this->emails_table
+		) . ' ' . $charset_collate;
 
-		// Logs table
 		$sql[] = $wpdb->prepare(
-			"CREATE TABLE IF NOT EXISTS %i (
+			'CREATE TABLE IF NOT EXISTS %i (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				log_type varchar(50) NOT NULL,
 				log_message text,
@@ -123,10 +155,9 @@ class Mail_Extractor_Database {
 				PRIMARY KEY (id),
 				KEY log_type (log_type),
 				KEY log_date (log_date)
-			) %s",
-			$this->logs_table,
-			$charset_collate
-		);
+			)',
+			$this->logs_table
+		) . ' ' . $charset_collate;
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		foreach ( $sql as $query ) {
@@ -155,7 +186,9 @@ class Mail_Extractor_Database {
 		);
 
 		foreach ( $defaults as $key => $value ) {
-			$this->save_setting( $key, $value );
+			if ( false === $this->get_setting( $key ) ) {
+				$this->save_setting( $key, $value );
+			}
 		}
 	}
 
@@ -180,21 +213,31 @@ class Mail_Extractor_Database {
 	 * @return array Settings array
 	 */
 	private function get_all_settings() {
-		if ( null === $this->settings ) {
-			global $wpdb;
-			
-			$results = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT setting_key, setting_value FROM %i",
-					$this->settings_table
-				),
-				ARRAY_A
-			);
+		if ( null !== $this->settings ) {
+			return $this->settings;
+		}
 
-			$this->settings = array();
-			if ( $results ) {
-				foreach ( $results as $row ) {
-					$this->settings[ $row['setting_key'] ] = maybe_unserialize( $row['setting_value'] );
+		if ( ! $this->ensure_tables_exist() ) {
+			return array();
+		}
+		
+		global $wpdb;
+		
+		$results = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT setting_key, setting_value FROM %i',
+				$this->settings_table
+			),
+			ARRAY_A
+		);
+
+		$this->settings = array();
+		if ( is_array( $results ) ) {
+			foreach ( $results as $row ) {
+				$key = $row['setting_key'] ?? '';
+				$value = $row['setting_value'] ?? '';
+				if ( ! empty( $key ) ) {
+					$this->settings[ $key ] = maybe_unserialize( $value );
 				}
 			}
 		}
@@ -224,6 +267,10 @@ class Mail_Extractor_Database {
 	 * @return bool|WP_Error Success or error
 	 */
 	public function save_setting( $key, $value ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return new WP_Error( 'table_missing', __( 'Database tables not available', 'mail-extractor' ) );
+		}
+
 		global $wpdb;
 
 		$result = $wpdb->replace(
@@ -236,11 +283,9 @@ class Mail_Extractor_Database {
 		);
 
 		if ( false === $result ) {
-			error_log( 'Mail Extractor DB Error: ' . $wpdb->last_error );
 			return new WP_Error( 'db_error', __( 'Failed to save setting', 'mail-extractor' ) );
 		}
 
-		// Clear cache
 		$this->settings = null;
 
 		return true;
@@ -254,24 +299,27 @@ class Mail_Extractor_Database {
 	 * @return bool|WP_Error Success or error
 	 */
 	public function save_email( $email_data ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return new WP_Error( 'table_missing', __( 'Database tables not available', 'mail-extractor' ) );
+		}
+
 		global $wpdb;
 
 		$result = $wpdb->replace(
 			$this->emails_table,
 			array(
-				'email_uid' => $email_data['uid'],
-				'email_from' => $email_data['from'],
-				'email_to' => $email_data['to'],
-				'email_subject' => $email_data['subject'],
-				'email_body' => $email_data['body'],
-				'email_date' => $email_data['date'],
-				'attachments_count' => $email_data['attachments_count'],
+				'email_uid' => $email_data['uid'] ?? '',
+				'email_from' => $email_data['from'] ?? '',
+				'email_to' => $email_data['to'] ?? '',
+				'email_subject' => $email_data['subject'] ?? '',
+				'email_body' => $email_data['body'] ?? '',
+				'email_date' => $email_data['date'] ?? current_time( 'mysql' ),
+				'attachments_count' => $email_data['attachments_count'] ?? 0,
 			),
 			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d' )
 		);
 
 		if ( false === $result ) {
-			error_log( 'Mail Extractor DB Error: ' . $wpdb->last_error );
 			return new WP_Error( 'db_error', __( 'Failed to save email', 'mail-extractor' ) );
 		}
 
@@ -285,16 +333,20 @@ class Mail_Extractor_Database {
 	 * @return int Emails count
 	 */
 	public function get_emails_count() {
+		if ( ! $this->ensure_tables_exist() ) {
+			return 0;
+		}
+
 		global $wpdb;
 
 		$count = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COUNT(*) FROM %i",
+				'SELECT COUNT(*) FROM %i',
 				$this->emails_table
 			)
 		);
 
-		return (int) $count;
+		return (int) ( $count ?? 0 );
 	}
 
 	/**
@@ -306,11 +358,15 @@ class Mail_Extractor_Database {
 	 * @return array Emails array
 	 */
 	public function get_emails( $limit = 20, $offset = 0 ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return array();
+		}
+
 		global $wpdb;
 
 		$results = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM %i ORDER BY email_date DESC LIMIT %d OFFSET %d",
+				'SELECT * FROM %i ORDER BY email_date DESC LIMIT %d OFFSET %d',
 				$this->emails_table,
 				$limit,
 				$offset
@@ -318,7 +374,7 @@ class Mail_Extractor_Database {
 			ARRAY_A
 		);
 
-		return $results ? $results : array();
+		return is_array( $results ) ? $results : array();
 	}
 
 	/**
@@ -329,18 +385,21 @@ class Mail_Extractor_Database {
 	 * @return int|false Number of deleted emails or false on error
 	 */
 	public function cleanup_old_emails( $days ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return false;
+		}
+
 		global $wpdb;
 
 		$result = $wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM %i WHERE email_date < DATE_SUB(NOW(), INTERVAL %d DAY)",
+				'DELETE FROM %i WHERE email_date < DATE_SUB(NOW(), INTERVAL %d DAY)',
 				$this->emails_table,
 				$days
 			)
 		);
 
 		if ( false === $result ) {
-			error_log( 'Mail Extractor DB Error: ' . $wpdb->last_error );
 			return false;
 		}
 
@@ -356,6 +415,10 @@ class Mail_Extractor_Database {
 	 * @return bool|WP_Error Success or error
 	 */
 	public function add_log( $type, $message ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return new WP_Error( 'table_missing', __( 'Database tables not available', 'mail-extractor' ) );
+		}
+
 		global $wpdb;
 
 		$result = $wpdb->insert(
@@ -368,7 +431,6 @@ class Mail_Extractor_Database {
 		);
 
 		if ( false === $result ) {
-			error_log( 'Mail Extractor DB Error: ' . $wpdb->last_error );
 			return new WP_Error( 'db_error', __( 'Failed to add log', 'mail-extractor' ) );
 		}
 
@@ -383,18 +445,22 @@ class Mail_Extractor_Database {
 	 * @return array Logs array
 	 */
 	public function get_recent_logs( $limit = 50 ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return array();
+		}
+
 		global $wpdb;
 
 		$results = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM %i ORDER BY log_date DESC LIMIT %d",
+				'SELECT * FROM %i ORDER BY log_date DESC LIMIT %d',
 				$this->logs_table,
 				$limit
 			),
 			ARRAY_A
 		);
 
-		return $results ? $results : array();
+		return is_array( $results ) ? $results : array();
 	}
 
 	/**
@@ -405,18 +471,21 @@ class Mail_Extractor_Database {
 	 * @return int|false Number of deleted logs or false on error
 	 */
 	public function cleanup_old_logs( $days = 7 ) {
+		if ( ! $this->ensure_tables_exist() ) {
+			return false;
+		}
+
 		global $wpdb;
 
 		$result = $wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM %i WHERE log_date < DATE_SUB(NOW(), INTERVAL %d DAY)",
+				'DELETE FROM %i WHERE log_date < DATE_SUB(NOW(), INTERVAL %d DAY)',
 				$this->logs_table,
 				$days
 			)
 		);
 
 		if ( false === $result ) {
-			error_log( 'Mail Extractor DB Error: ' . $wpdb->last_error );
 			return false;
 		}
 
