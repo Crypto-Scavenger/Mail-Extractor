@@ -33,6 +33,13 @@ class Mail_Extractor_Admin {
 	private $database;
 
 	/**
+	 * Settings cache (lazy loaded)
+	 *
+	 * @var array|null
+	 */
+	private $settings = null;
+
+	/**
 	 * Constructor
 	 *
 	 * @since 1.0.0
@@ -43,11 +50,35 @@ class Mail_Extractor_Admin {
 		$this->core = $core;
 		$this->database = $database;
 
-		// Admin hooks
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_mail_extractor_test_connection', array( $this, 'ajax_test_connection' ) );
 		add_action( 'wp_ajax_mail_extractor_import_now', array( $this, 'ajax_import_now' ) );
+	}
+
+	/**
+	 * Get settings (lazy loading)
+	 *
+	 * @since 1.0.0
+	 * @return array
+	 */
+	private function get_settings() {
+		if ( null === $this->settings ) {
+			$this->settings = array(
+				'pop3_server' => $this->database->get_setting( 'pop3_server' ),
+				'pop3_port' => $this->database->get_setting( 'pop3_port', '995' ),
+				'username' => $this->database->get_setting( 'username' ),
+				'email_address' => $this->database->get_setting( 'email_address' ),
+				'password' => $this->database->get_setting( 'password' ),
+				'app_password' => $this->database->get_setting( 'app_password' ),
+				'use_ssl' => $this->database->get_setting( 'use_ssl', '1' ),
+				'import_frequency' => $this->database->get_setting( 'import_frequency', '60' ),
+				'auto_cleanup' => $this->database->get_setting( 'auto_cleanup', '0' ),
+				'cleanup_days' => $this->database->get_setting( 'cleanup_days', '30' ),
+				'cleanup_on_uninstall' => $this->database->get_setting( 'cleanup_on_uninstall', '0' ),
+			);
+		}
+		return $this->settings;
 	}
 
 	/**
@@ -140,12 +171,11 @@ class Mail_Extractor_Admin {
 			wp_die( esc_html__( 'Unauthorized access', 'mail-extractor' ) );
 		}
 
-		// Handle form submission
 		if ( isset( $_POST['mail_extractor_settings_nonce'] ) ) {
 			$this->save_settings();
 		}
 
-		$settings = $this->get_settings_for_display();
+		$settings = $this->get_settings();
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
@@ -168,7 +198,7 @@ class Mail_Extractor_Admin {
 								type="text" 
 								id="pop3_server" 
 								name="pop3_server"
-								value="<?php echo esc_attr( $settings['pop3_server'] ); ?>"
+								value="<?php echo esc_attr( $settings['pop3_server'] ?? '' ); ?>"
 								class="regular-text"
 								placeholder="pop.gmail.com"
 							/>
@@ -188,7 +218,7 @@ class Mail_Extractor_Admin {
 								type="number" 
 								id="pop3_port" 
 								name="pop3_port"
-								value="<?php echo esc_attr( $settings['pop3_port'] ); ?>"
+								value="<?php echo esc_attr( $settings['pop3_port'] ?? '995' ); ?>"
 								class="small-text"
 								min="1"
 								max="65535"
@@ -209,7 +239,7 @@ class Mail_Extractor_Admin {
 								type="text" 
 								id="username" 
 								name="username"
-								value="<?php echo esc_attr( $settings['username'] ); ?>"
+								value="<?php echo esc_attr( $settings['username'] ?? '' ); ?>"
 								class="regular-text"
 								placeholder="user@example.com"
 							/>
@@ -229,7 +259,7 @@ class Mail_Extractor_Admin {
 								type="email" 
 								id="email_address" 
 								name="email_address"
-								value="<?php echo esc_attr( $settings['email_address'] ); ?>"
+								value="<?php echo esc_attr( $settings['email_address'] ?? '' ); ?>"
 								class="regular-text"
 								placeholder="user@example.com"
 							/>
@@ -249,7 +279,7 @@ class Mail_Extractor_Admin {
 								type="password" 
 								id="password" 
 								name="password"
-								value="<?php echo esc_attr( $settings['password'] ); ?>"
+								value="<?php echo esc_attr( $settings['password'] ?? '' ); ?>"
 								class="regular-text"
 								autocomplete="new-password"
 							/>
@@ -269,7 +299,7 @@ class Mail_Extractor_Admin {
 								type="password" 
 								id="app_password" 
 								name="app_password"
-								value="<?php echo esc_attr( $settings['app_password'] ); ?>"
+								value="<?php echo esc_attr( $settings['app_password'] ?? '' ); ?>"
 								class="regular-text"
 								autocomplete="new-password"
 							/>
@@ -289,7 +319,7 @@ class Mail_Extractor_Admin {
 									id="use_ssl" 
 									name="use_ssl"
 									value="1"
-									<?php checked( $settings['use_ssl'], '1' ); ?>
+									<?php checked( $settings['use_ssl'] ?? '1', '1' ); ?>
 								/>
 								<?php esc_html_e( 'Enable SSL connection (recommended)', 'mail-extractor' ); ?>
 							</label>
@@ -310,7 +340,7 @@ class Mail_Extractor_Admin {
 								type="number" 
 								id="import_frequency" 
 								name="import_frequency"
-								value="<?php echo esc_attr( $settings['import_frequency'] ); ?>"
+								value="<?php echo esc_attr( $settings['import_frequency'] ?? '60' ); ?>"
 								class="small-text"
 								min="5"
 								max="1440"
@@ -332,7 +362,7 @@ class Mail_Extractor_Admin {
 									id="auto_cleanup" 
 									name="auto_cleanup"
 									value="1"
-									<?php checked( $settings['auto_cleanup'], '1' ); ?>
+									<?php checked( $settings['auto_cleanup'] ?? '0', '1' ); ?>
 								/>
 								<?php esc_html_e( 'Enable automatic deletion of old emails', 'mail-extractor' ); ?>
 							</label>
@@ -349,7 +379,7 @@ class Mail_Extractor_Admin {
 								type="number" 
 								id="cleanup_days" 
 								name="cleanup_days"
-								value="<?php echo esc_attr( $settings['cleanup_days'] ); ?>"
+								value="<?php echo esc_attr( $settings['cleanup_days'] ?? '30' ); ?>"
 								class="small-text"
 								min="1"
 								max="365"
@@ -371,7 +401,7 @@ class Mail_Extractor_Admin {
 									id="cleanup_on_uninstall" 
 									name="cleanup_on_uninstall"
 									value="1"
-									<?php checked( $settings['cleanup_on_uninstall'], '1' ); ?>
+									<?php checked( $settings['cleanup_on_uninstall'] ?? '0', '1' ); ?>
 								/>
 								<?php esc_html_e( 'Delete all data when plugin is uninstalled', 'mail-extractor' ); ?>
 							</label>
@@ -424,28 +454,6 @@ class Mail_Extractor_Admin {
 	}
 
 	/**
-	 * Get settings for display
-	 *
-	 * @since 1.0.0
-	 * @return array Settings array
-	 */
-	private function get_settings_for_display() {
-		return array(
-			'pop3_server' => $this->database->get_setting( 'pop3_server' ),
-			'pop3_port' => $this->database->get_setting( 'pop3_port', '995' ),
-			'username' => $this->database->get_setting( 'username' ),
-			'email_address' => $this->database->get_setting( 'email_address' ),
-			'password' => $this->database->get_setting( 'password' ),
-			'app_password' => $this->database->get_setting( 'app_password' ),
-			'use_ssl' => $this->database->get_setting( 'use_ssl', '1' ),
-			'import_frequency' => $this->database->get_setting( 'import_frequency', '60' ),
-			'auto_cleanup' => $this->database->get_setting( 'auto_cleanup', '0' ),
-			'cleanup_days' => $this->database->get_setting( 'cleanup_days', '30' ),
-			'cleanup_on_uninstall' => $this->database->get_setting( 'cleanup_on_uninstall', '0' ),
-		);
-	}
-
-	/**
 	 * Save settings
 	 *
 	 * @since 1.0.0
@@ -456,17 +464,17 @@ class Mail_Extractor_Admin {
 		}
 
 		if ( ! isset( $_POST['mail_extractor_settings_nonce'] ) ||
-		     ! wp_verify_nonce( $_POST['mail_extractor_settings_nonce'], 'mail_extractor_save_settings' ) ) {
+		     ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mail_extractor_settings_nonce'] ) ), 'mail_extractor_save_settings' ) ) {
 			wp_die( esc_html__( 'Security check failed', 'mail-extractor' ) );
 		}
 
 		$settings = array(
-			'pop3_server' => isset( $_POST['pop3_server'] ) ? sanitize_text_field( $_POST['pop3_server'] ) : '',
+			'pop3_server' => isset( $_POST['pop3_server'] ) ? sanitize_text_field( wp_unslash( $_POST['pop3_server'] ) ) : '',
 			'pop3_port' => isset( $_POST['pop3_port'] ) ? absint( $_POST['pop3_port'] ) : 995,
-			'username' => isset( $_POST['username'] ) ? sanitize_text_field( $_POST['username'] ) : '',
-			'email_address' => isset( $_POST['email_address'] ) ? sanitize_email( $_POST['email_address'] ) : '',
-			'password' => isset( $_POST['password'] ) ? $_POST['password'] : '',
-			'app_password' => isset( $_POST['app_password'] ) ? $_POST['app_password'] : '',
+			'username' => isset( $_POST['username'] ) ? sanitize_text_field( wp_unslash( $_POST['username'] ) ) : '',
+			'email_address' => isset( $_POST['email_address'] ) ? sanitize_email( wp_unslash( $_POST['email_address'] ) ) : '',
+			'password' => isset( $_POST['password'] ) ? wp_unslash( $_POST['password'] ) : '',
+			'app_password' => isset( $_POST['app_password'] ) ? wp_unslash( $_POST['app_password'] ) : '',
 			'use_ssl' => isset( $_POST['use_ssl'] ) ? '1' : '0',
 			'import_frequency' => isset( $_POST['import_frequency'] ) ? absint( $_POST['import_frequency'] ) : 60,
 			'auto_cleanup' => isset( $_POST['auto_cleanup'] ) ? '1' : '0',
@@ -474,6 +482,7 @@ class Mail_Extractor_Admin {
 			'cleanup_on_uninstall' => isset( $_POST['cleanup_on_uninstall'] ) ? '1' : '0',
 		);
 
+		$errors = false;
 		foreach ( $settings as $key => $value ) {
 			$result = $this->database->save_setting( $key, $value );
 			if ( is_wp_error( $result ) ) {
@@ -483,16 +492,20 @@ class Mail_Extractor_Admin {
 					$result->get_error_message(),
 					'error'
 				);
-				return;
+				$errors = true;
+				break;
 			}
 		}
 
-		add_settings_error(
-			'mail_extractor_messages',
-			'mail_extractor_success',
-			__( 'Settings saved successfully.', 'mail-extractor' ),
-			'success'
-		);
+		if ( ! $errors ) {
+			$this->settings = null;
+			add_settings_error(
+				'mail_extractor_messages',
+				'mail_extractor_success',
+				__( 'Settings saved successfully.', 'mail-extractor' ),
+				'success'
+			);
+		}
 	}
 
 	/**
@@ -545,11 +558,11 @@ class Mail_Extractor_Admin {
 					<?php else : ?>
 						<?php foreach ( $emails as $email ) : ?>
 							<tr>
-								<td><?php echo esc_html( $email['email_date'] ); ?></td>
-								<td><?php echo esc_html( $email['email_from'] ); ?></td>
-								<td><?php echo esc_html( $email['email_to'] ); ?></td>
-								<td><?php echo esc_html( $email['email_subject'] ); ?></td>
-								<td><?php echo esc_html( $email['imported_date'] ); ?></td>
+								<td><?php echo esc_html( $email['email_date'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $email['email_from'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $email['email_to'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $email['email_subject'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $email['imported_date'] ?? '' ); ?></td>
 							</tr>
 						<?php endforeach; ?>
 					<?php endif; ?>
@@ -560,14 +573,14 @@ class Mail_Extractor_Admin {
 				<div class="tablenav">
 					<div class="tablenav-pages">
 						<?php
-						echo paginate_links( array(
+						echo wp_kses_post( paginate_links( array(
 							'base' => add_query_arg( 'paged', '%#%' ),
 							'format' => '',
 							'prev_text' => __( '&laquo;', 'mail-extractor' ),
 							'next_text' => __( '&raquo;', 'mail-extractor' ),
 							'total' => $total_pages,
 							'current' => $page,
-						) );
+						) ) );
 						?>
 					</div>
 				</div>
@@ -608,9 +621,9 @@ class Mail_Extractor_Admin {
 					<?php else : ?>
 						<?php foreach ( $logs as $log ) : ?>
 							<tr>
-								<td><?php echo esc_html( $log['log_date'] ); ?></td>
-								<td><?php echo esc_html( ucfirst( $log['log_type'] ) ); ?></td>
-								<td><?php echo esc_html( $log['log_message'] ); ?></td>
+								<td><?php echo esc_html( $log['log_date'] ?? '' ); ?></td>
+								<td><?php echo esc_html( ucfirst( $log['log_type'] ?? '' ) ); ?></td>
+								<td><?php echo esc_html( $log['log_message'] ?? '' ); ?></td>
 							</tr>
 						<?php endforeach; ?>
 					<?php endif; ?>
@@ -635,11 +648,11 @@ class Mail_Extractor_Admin {
 		}
 
 		$config = array(
-			'server' => isset( $_POST['server'] ) ? sanitize_text_field( $_POST['server'] ) : '',
+			'server' => isset( $_POST['server'] ) ? sanitize_text_field( wp_unslash( $_POST['server'] ) ) : '',
 			'port' => isset( $_POST['port'] ) ? absint( $_POST['port'] ) : 995,
-			'username' => isset( $_POST['username'] ) ? sanitize_text_field( $_POST['username'] ) : '',
-			'password' => isset( $_POST['password'] ) ? $_POST['password'] : '',
-			'app_password' => isset( $_POST['app_password'] ) ? $_POST['app_password'] : '',
+			'username' => isset( $_POST['username'] ) ? sanitize_text_field( wp_unslash( $_POST['username'] ) ) : '',
+			'password' => isset( $_POST['password'] ) ? wp_unslash( $_POST['password'] ) : '',
+			'app_password' => isset( $_POST['app_password'] ) ? wp_unslash( $_POST['app_password'] ) : '',
 			'use_ssl' => isset( $_POST['use_ssl'] ) && '1' === $_POST['use_ssl'],
 		);
 
